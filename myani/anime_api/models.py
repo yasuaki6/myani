@@ -1,5 +1,6 @@
 from django.db import models
 
+
 class AnimeTitles(models.Model):
     title = models.CharField(primary_key=True,max_length=64)
     overview = models.TextField()

@@ -1,18 +1,15 @@
-from rest_framework import serializers
-import re
-from django.utils import html
-from rest_framework.exceptions import ValidationError
-from django.contrib.auth import get_user_model
-from django.contrib.auth.password_validation import validate_password as provided_validate_password
-from django.core.exceptions import ValidationError as DjangoValidationError 
-from .models import (
-    VerificationTokenModel,
-    FavoritesModel,
-    ReviewsModel,
-    UserProfileModel)
-from django.utils import timezone
 from django.apps import apps
+from django.contrib.auth import get_user_model
+from django.contrib.auth.password_validation import \
+    validate_password as provided_validate_password
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.utils import html, timezone
+from rest_framework import serializers
+from rest_framework.exceptions import ValidationError
+import re
 
+from .models import (FavoritesModel, ReviewsModel, UserProfileModel,
+                     VerificationTokenModel)
 
 Users = get_user_model()
 

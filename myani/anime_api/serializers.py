@@ -1,6 +1,8 @@
 from rest_framework import serializers
-from .models import AnimeTitles,Tags
 from rest_framework.authtoken.models import Token
+
+from .models import AnimeTitles, Tags
+
 
 class AnimetitlesSerializer(serializers.HyperlinkedModelSerializer):
     class Meta:

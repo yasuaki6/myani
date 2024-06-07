@@ -1,4 +1,4 @@
-import logging
+from accounts.authentication import CookieHandlerJWTAuthentication
 from django.conf import settings
 from django.shortcuts import render,redirect
 from django.contrib.auth import authenticate, login, logout
@@ -7,6 +7,31 @@ from django.views.generic.base import TemplateView,View
 from django.utils import timezone
 from django.utils.html import strip_tags
 from django.template.loader import render_to_string
+from django.core.exceptions import ObjectDoesNotExist
+from django.db import IntegrityError,transaction
+from django.contrib.auth.models import AnonymousUser
+from django.core.mail import send_mail
+from django.shortcuts import get_object_or_404
+from django.contrib.auth.password_validation import validate_password
+from datetime import timedelta
+import json
+import logging
+import os
+from rest_framework import status, viewsets, generics
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework.exceptions import ValidationError
+from rest_framework.decorators import action
+from rest_framework.permissions import IsAuthenticated,AllowAny
+from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.views import TokenRefreshView
+from rest_framework.response import Response
+import re
+import requests
+import random
+import secrets
+
+from anime_api.models import AnimeTitles
 from .models import (Users, 
                      TwoFactorEmailModel,
                      VerificationTokenModel,
@@ -15,7 +40,6 @@ from .models import (Users,
                      UserProfileModel,
                      UserSelectAnimeTrackingModel
 )
-from anime_api.models import AnimeTitles
 from .serializers import (UserRegistrationSerializer, 
                           ChangePasswordSerializer,
                           ProvisionalRegistrationSerializer,
@@ -26,30 +50,6 @@ from .serializers import (UserRegistrationSerializer,
                             EditUserInfoSerializer,
                             UserProfileSerializer,
                           )
-from rest_framework import status, viewsets, generics
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework.exceptions import ValidationError
-from django.core.exceptions import ObjectDoesNotExist
-from rest_framework.decorators import action
-from rest_framework.permissions import IsAuthenticated,AllowAny
-from django.contrib.auth.password_validation import validate_password
-from rest_framework_simplejwt.tokens import RefreshToken
-import secrets
-from datetime import timedelta
-from django.core.mail import send_mail
-import os
-from rest_framework_simplejwt.views import TokenRefreshView
-from rest_framework.response import Response
-from accounts.authentication import CookieHandlerJWTAuthentication
-from django.shortcuts import get_object_or_404
-import re
-from django.contrib.auth.models import AnonymousUser
-import requests
-import json
-import random
-from django.db import IntegrityError,transaction
-
 # Create your views here.
 
 def get_tokens_for_user(user):
@@ -57,7 +57,6 @@ def get_tokens_for_user(user):
 
     return {
         'refresh': str(refresh),
-        'access': str(refresh.access_token),
     }
 
 class UserViewSet(viewsets.ModelViewSet, generics.GenericAPIView):
@@ -142,7 +141,6 @@ class UserViewSet(viewsets.ModelViewSet, generics.GenericAPIView):
         
     @action(detail=False, methods=['GET'], authentication_classes=[CookieHandlerJWTAuthentication])
     def resend_email_verification(self, request, *args, **kwargs):
-        print(request.user)
         if not isinstance(request.user,AnonymousUser):
             user = request.user
             if user.is_email_verified == True:
@@ -392,7 +390,6 @@ class UserViewSet(viewsets.ModelViewSet, generics.GenericAPIView):
                 return Response(status=status.HTTP_200_OK)
 
             else:
-                print(serializer.errors)
                 return Response(serializer.errors,status=status.HTTP_400_BAD_REQUEST)
         
         else:
@@ -454,7 +451,6 @@ class UserViewSet(viewsets.ModelViewSet, generics.GenericAPIView):
         response_data = {}
         for i,instance in enumerate(instances):
             response_data[i] = instance.unique_username
-        print(response_data)
 
         return Response(response_data,status=status.HTTP_200_OK)
             
@@ -606,12 +602,10 @@ class FavoritesAnimeViewSet(viewsets.ModelViewSet):
         
         serializer = FavoritesAnimeSerializer(data=data)
         
-        #uuidとtitleは一意にあるので、
         try:
             serializer.is_valid(raise_exception=True)
             
         except ValidationError as e:
-            print(e)
             for error_key, error_value in e.detail.items():
                 for error_detail in error_value:
                     if error_detail.code == 'unique':
@@ -650,6 +644,7 @@ class FavoritesAnimeViewSet(viewsets.ModelViewSet):
                 
                 if favorite:
                     return Response({'favorite_state': True}, status=status.HTTP_200_OK)
+                
                 else:
                     return Response({'favorite_state': False}, status=status.HTTP_200_OK)
                 
@@ -682,7 +677,6 @@ class FavoritesAnimeViewSet(viewsets.ModelViewSet):
                 try:      
                     favorite_instances = FavoritesModel.objects.filter(uuid=request.user.uuid)
                     anime_title_instances = AnimeTitles.objects.filter(title__in=favorite_instances.values_list('anime_title', flat=True))
-                    print(anime_title_instances)
                     
                     response_data = {}
                     for anime_title_instance in anime_title_instances:
@@ -698,7 +692,6 @@ class FavoritesAnimeViewSet(viewsets.ModelViewSet):
                 
             else:
                 try: 
-                    print(target_user_instance)
                     favorite_instances = FavoritesModel.objects.filter(uuid=target_user_instance.uuid, is_hidden=False)
                     anime_title_instances = AnimeTitles.objects.filter(title__in=favorite_instances.values_list('anime_title', flat=True))
                     
@@ -728,7 +721,6 @@ class ReviewViewSet(viewsets.ModelViewSet):
     def get_review(self,request):
         """
         指定したユーザとタイトルで合致するreviewを返すapi
-        エスケープ処理は施していないため、フロントエンド側で行う
         args:
         {
           username:string(username#useridentifier)
@@ -748,12 +740,11 @@ class ReviewViewSet(viewsets.ModelViewSet):
                 reviews_instances = ReviewsModel.objects.filter(author=author,anime_title=request_anime_title)
                 response_data = {}
                 for reviews_instance in reviews_instances:
-                    print(reviews_instance)
                     response_data[str(reviews_instance.author)] = {
                         'title': str(reviews_instance.review_title),
                         'body':str(reviews_instance.body),
-                        'star':str(reviews_instance.star)}
-                print(response_data)    
+                        'star':str(reviews_instance.star)} 
+                      
                 return Response(response_data, status=status.HTTP_200_OK)
                 
             except ReviewsModel.DoesNotExist:
@@ -768,7 +759,6 @@ class ReviewViewSet(viewsets.ModelViewSet):
     def random_get(self,request):
         """
         指定した作品のreviewをランダムに返すapi
-        エスケープ処理は施していないため、フロントエンド側で行う
         args:
             anime_title:string 作品名
             number:number 取得する数
@@ -791,14 +781,12 @@ class ReviewViewSet(viewsets.ModelViewSet):
         if len(all_reviews) <= count:
             for review in all_reviews:
                 response_data[str(review.author)] = {'title':str(review.review_title),'body':review.body, 'star':review.star}
-            print(response_data)
             return Response(response_data, status=status.HTTP_200_OK)        
         
         else:
             random_reviews = random.sample(list(all_reviews), count)
             for review in random_reviews:
                 response_data[str(review.author)] = {'title':str(review.review_title),'body':review.body, 'star':review.star}
-            print(response_data)
             return Response(response_data, status=status.HTTP_200_OK)
         
     @action(detail=False, methods=['POST'], authentication_classes=[CookieHandlerJWTAuthentication], permission_classes=[IsAuthenticated])
@@ -824,7 +812,6 @@ class ReviewViewSet(viewsets.ModelViewSet):
                     return Response(status=status.HTTP_200_OK)
             
             else:
-                print(serializer.errors)
                 if len(serializer.errors) == 1 and 'non_field_errors' in serializer.errors and serializer.errors['non_field_errors'][0].code == 'unique':
                     anime_title = request.data.get('anime_title')
                     author = request.data.get('author')
@@ -876,7 +863,6 @@ class ReviewViewSet(viewsets.ModelViewSet):
             star?:number
         """
         
-        print(request.user)
         anime_title = request.data.get('anime_title')
         author = request.user.uuid
         
@@ -905,6 +891,7 @@ class ReviewViewSet(viewsets.ModelViewSet):
             
         else:
             return Response(status=status.HTTP_401_UNAUTHORIZED)
+        
     """    
     @action(detail=False, methods=['GET'], authentication_classes=[CookieHandlerJWTAuthentication])
     def get_list(self,request):
@@ -939,9 +926,7 @@ class UserProfileViewSet(viewsets.ModelViewSet):
             icon:string
             status_message:string
             background:string
-        """
-        
-        
+        """       
         
         if not isinstance(request.user,AnonymousUser):       
             profile_instance = get_object_or_404(UserProfileModel,uuid=request.user.uuid)
@@ -949,10 +934,6 @@ class UserProfileViewSet(viewsets.ModelViewSet):
             icon = request.data.get('icon', profile_instance.icon)
             status_message = request.data.get('status_message', profile_instance.status_message)
             background = request.data.get('background', profile_instance.background)
-            print(icon)
-            print(background)
-            print(status_message)
-            
 
             serializer = self.get_serializer(data={
                 'icon':icon,
@@ -964,10 +945,8 @@ class UserProfileViewSet(viewsets.ModelViewSet):
                 profile_instance.icon = icon
                 profile_instance.status_message = status_message
                 profile_instance.background = background
-                profile_instance.save()
+                profile_instance.save()       
                 
-                
-            
                 return Response(status=status.HTTP_200_OK)
             
             else:
@@ -989,8 +968,10 @@ class UserProfileViewSet(viewsets.ModelViewSet):
         """
         uniqueusername = request.query_params.get('username') 
         user = get_object_or_404(Users, unique_username=uniqueusername)
+        
         try:
             profile_instance = UserProfileModel.objects.get(uuid=user.uuid)
+            
         except UserProfileModel.DoesNotExist:
                 data={
                 'uuid':user.uuid,

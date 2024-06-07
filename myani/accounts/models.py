@@ -1,17 +1,19 @@
-from django.db import models,IntegrityError
-from django.contrib.auth.models import (
-    BaseUserManager,AbstractBaseUser,PermissionsMixin
-)
-from django.urls import reverse_lazy
-from django.apps import apps
 import random
-from datetime import datetime, timedelta, timezone
-from django.core.mail import send_mail
-import pytz
-from rest_framework.exceptions import ValidationError
-from django.contrib.auth.validators import UnicodeUsernameValidator
 import uuid
+from datetime import datetime, timedelta, timezone
+
+import pytz
+from django.apps import apps
+from django.contrib.auth.models import (AbstractBaseUser, BaseUserManager,
+                                        PermissionsMixin)
+from django.contrib.auth.validators import UnicodeUsernameValidator
+from django.core.mail import send_mail
+from django.db import IntegrityError, models
+from django.urls import reverse_lazy
+from rest_framework.exceptions import ValidationError
+
 from anime_api.models import AnimeTitles
+
 
 def random_generate(length):
     identifier = ''.join(str(random.randint(0, 9)) for _ in range(length))

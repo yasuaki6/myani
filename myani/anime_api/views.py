@@ -1,13 +1,14 @@
-from django.shortcuts import render
-from rest_framework.views import APIView
-from rest_framework.authentication import TokenAuthentication
-from rest_framework.permissions import IsAuthenticated, AllowAny
-from rest_framework import generics
-from .models import AnimeTitles,Tags
-from rest_framework import viewsets
-from .serializers import (AnimetitlesSerializer,)
 import numpy as np
+from django.shortcuts import render
+from rest_framework import generics, viewsets
+from rest_framework.authentication import TokenAuthentication
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.views import APIView
+
+from .models import AnimeTitles, Tags
+from .serializers import AnimetitlesSerializer
+
 
 # Create your views here.
 class RandomAnimeTitles(APIView):
