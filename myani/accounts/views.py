@@ -42,7 +42,7 @@ from .models import (Users,
 )
 from .serializers import (UserRegistrationSerializer, 
                           ChangePasswordSerializer,
-                          ProvisionalRegistrationSerializer,
+                          ConfirmRegistrationSerializer,
                             UserLoginSerializer,
                             FavoritesAnimeSerializer,
                             ReviewSerializer,
@@ -50,13 +50,16 @@ from .serializers import (UserRegistrationSerializer,
                             EditUserInfoSerializer,
                             UserProfileSerializer,
                           )
-# Create your views here.
+import environ
+
+env = environ.Env()
 
 def get_tokens_for_user(user):
     refresh = RefreshToken.for_user(user)
 
     return {
         'refresh': str(refresh),
+        'access': str(refresh.access_token), #1
     }
 
 class UserViewSet(viewsets.ModelViewSet, generics.GenericAPIView):
@@ -69,8 +72,8 @@ class UserViewSet(viewsets.ModelViewSet, generics.GenericAPIView):
                 return UserRegistrationSerializer
             case 'login':
                 return UserLoginSerializer
-            case 'provisional_registration':
-                return ProvisionalRegistrationSerializer
+            case 'confirm_registration':
+                return ConfirmRegistrationSerializer
             case "change_password":
                 return ChangePasswordSerializer
             case "provisional_reset_password_token":
@@ -84,7 +87,7 @@ class UserViewSet(viewsets.ModelViewSet, generics.GenericAPIView):
             case "edit_user_info":
                 return EditUserInfoSerializer
             case _:
-                return null
+                return None
             
     @action(detail=False, methods=['POST'])
     def registration(self, request, *args, **kwargs):
@@ -105,7 +108,7 @@ class UserViewSet(viewsets.ModelViewSet, generics.GenericAPIView):
         serializer = self.get_serializer(data=request.data)
         if serializer.is_valid():
             user = serializer.create()
-            UserProfileModel.create(uuid=user.uuid)
+            UserProfileModel.objects.create(uuid=user) #1
 
             token = secrets.token_urlsafe(64)
             expiry = timezone.now() + timedelta(minutes=30)
@@ -117,7 +120,7 @@ class UserViewSet(viewsets.ModelViewSet, generics.GenericAPIView):
             purpose_regist_user = True,
             )
             
-            regist_user_url = settings.BASE_URL + '/accounts/user/regist/?token={}'.format(token)
+            regist_user_url = env('CORS_ALLOWED_ORIGINS') + '/tokenchack/{}'.format(token)
             message = render_to_string('regist_user_email_template.html',{'regist_user_url': regist_user_url})
             
             email_config = {
@@ -145,6 +148,7 @@ class UserViewSet(viewsets.ModelViewSet, generics.GenericAPIView):
             user = request.user
             if user.is_email_verified == True:
                 return Response('認証済み',status=status.HTTP_200_OK)
+            
             token = secrets.token_urlsafe(64)
             expiry = timezone.now() + timedelta(minutes=30)
             
@@ -155,7 +159,7 @@ class UserViewSet(viewsets.ModelViewSet, generics.GenericAPIView):
             purpose_regist_user = True,
             )
             
-            regist_user_url = settings.BASE_URL + '/accounts/user/regist/?token={}'.format(token)
+            regist_user_url = env('CORS_ALLOWED_ORIGINS') + '/tokenchack/{}'.format(token)
             message = render_to_string('regist_user_email_template.html',{'regist_user_url': regist_user_url})
             
             email_config = {
@@ -177,7 +181,7 @@ class UserViewSet(viewsets.ModelViewSet, generics.GenericAPIView):
             return Response(status=status.HTTP_401_UNAUTHORIZED)
         
     @action(detail=False, methods=['GET'])
-    def provisional_registration(self, request, *args, **kwargs):
+    def confirm_registration(self, request, *args, **kwargs):
         """
         userの本登録を確認するapi
         
@@ -188,13 +192,14 @@ class UserViewSet(viewsets.ModelViewSet, generics.GenericAPIView):
         Return:
             Response.object
         """
-        serializer = self.get_serializer(data=request.data)
+        serializer = self.get_serializer(data={'token':request.query_params.get('token')})
         if serializer.is_valid(raise_exception=True):
-            user = Users.objects.get(uuid=serializer.token_instances.uuid)
+            user = Users.objects.get(uuid=serializer.token_instances.uuid.uuid)
             user.is_email_verified = True
+            user.save()
             serializer.token_instances.delete()
-            return Response(status=HTTP_200_OK)      
-        
+            return Response(status=status.HTTP_200_OK) 
+
     @action(detail=False, methods=['POST'])
     def change_password(self, request, authentication_classes=[CookieHandlerJWTAuthentication]):
         """
@@ -329,6 +334,7 @@ class UserViewSet(viewsets.ModelViewSet, generics.GenericAPIView):
         
         if serializer.is_valid(raise_exception=True):
             tokens = get_tokens_for_user(serializer.user)
+            print(tokens)
             response = Response({'message': 'Login successful'})
             response.set_cookie('access_token', tokens['access'], httponly=True, secure=True, samesite='None')
             response.set_cookie('refresh_token', tokens['refresh'], httponly=True, secure=True, samesite='None')
@@ -345,7 +351,6 @@ class UserViewSet(viewsets.ModelViewSet, generics.GenericAPIView):
             username(Str):ユーザ名
             identifier(Str):識別子
             email(Str):メールアドレス
-            icon:画像
             is_email_verified:メールアドレス認証有無
         """
         permission_classes = [IsAuthenticated]
@@ -356,7 +361,7 @@ class UserViewSet(viewsets.ModelViewSet, generics.GenericAPIView):
                 'username':user.username,
                 'identifier':user.user_identifier,
                 'email':user.email,
-                'is_email_verified':user.is_email_verified
+                'is_email_verified':user.is_email_verified,
             }
             
             return Response(response_data, status=status.HTTP_200_OK)
@@ -454,10 +459,23 @@ class UserViewSet(viewsets.ModelViewSet, generics.GenericAPIView):
 
         return Response(response_data,status=status.HTTP_200_OK)
             
-            
+    @action(detail=False, methods=['DELETE'],authentication_classes=[CookieHandlerJWTAuthentication])
+    def delete(self, request, *args, **kwargs):
+        """
+        退会するためのapi
+        args:
+        retrun: 
+        """        
+        print(request.user)
+        if not isinstance(request.user,AnonymousUser):
+            user = request.user
+            user.delete()
+            return Response(status=status.HTTP_200_OK)
         
+        else:
+            return Response(status=status.HTTP_401_UNAUTHORIZED)
     
-
+    
 # HTTPRequestのBodyプロパティから送られてきたtokenを受け取る
 class CustomTokenRefreshView(APIView):
     def get(self, request, *args, **kwargs):
@@ -677,7 +695,7 @@ class FavoritesAnimeViewSet(viewsets.ModelViewSet):
                 try:      
                     favorite_instances = FavoritesModel.objects.filter(uuid=request.user.uuid)
                     anime_title_instances = AnimeTitles.objects.filter(title__in=favorite_instances.values_list('anime_title', flat=True))
-                    
+             
                     response_data = {}
                     for anime_title_instance in anime_title_instances:
                         response_data[str(anime_title_instance.title)] = {
@@ -801,8 +819,16 @@ class ReviewViewSet(viewsets.ModelViewSet):
         """
         
         if not isinstance(request.user,AnonymousUser) and request.data.get('author') == request.user.unique_username:
-            request.data['author'] = request.user.uuid
-            serializer = self.get_serializer(data=request.data)
+            data = {
+                'author':request.user.uuid,
+                'anime_title':request.data['anime_title'],
+                'review_title':request.data['review_title'],
+                'body':request.data['body'],
+                'star':request.data['star'],
+            }
+            
+            serializer = self.get_serializer(data=data)
+
             if serializer.is_valid():
                 try:
                     ReviewsModel.objects.create(**serializer.validated_data)
@@ -814,11 +840,12 @@ class ReviewViewSet(viewsets.ModelViewSet):
             else:
                 if len(serializer.errors) == 1 and 'non_field_errors' in serializer.errors and serializer.errors['non_field_errors'][0].code == 'unique':
                     anime_title = request.data.get('anime_title')
-                    author = request.data.get('author')
+                    author = request.user.uuid
                     with transaction.atomic():
                         tmp = ReviewsModel.objects.get(anime_title=anime_title, author=author)
                         tmp.delete() 
-                    
+                        serializer = self.get_serializer(data=data)
+                        serializer.is_valid()
                         ReviewsModel.objects.create(**serializer.validated_data)
                             
                     return Response(status=status.HTTP_201_CREATED)
@@ -931,26 +958,26 @@ class UserProfileViewSet(viewsets.ModelViewSet):
         if not isinstance(request.user,AnonymousUser):       
             profile_instance = get_object_or_404(UserProfileModel,uuid=request.user.uuid)
             
-            icon = request.data.get('icon', profile_instance.icon)
+            icon = request.data.get('icon', profile_instance.icon._file)
             status_message = request.data.get('status_message', profile_instance.status_message)
-            background = request.data.get('background', profile_instance.background)
-
-            serializer = self.get_serializer(data={
-                'icon':icon,
-                'status_message':status_message,
-                'background':background
-            })
+            background = request.data.get('background', profile_instance.background._file)
+            
+            data = {'uuid':request.user.uuid}
+            for key, value in {'icon':icon,'status_message':status_message,'background':background}.items():
+                if  not value is None:
+                    print(f"{key} {value}")
+                    data[key] = value
+                    
+            serializer = self.get_serializer(data=data)
 
             if serializer.is_valid():
-                profile_instance.icon = icon
-                profile_instance.status_message = status_message
-                profile_instance.background = background
-                profile_instance.save()       
+                serializer.update(profile_instance ,serializer.validated_data)   
                 
                 return Response(status=status.HTTP_200_OK)
             
             else:
-                return Response(serializers.error_message,status=status.HTTP_400_BAD_REQUEST)
+                print(serializer.errors)
+                return Response(serializer.errors,status=status.HTTP_400_BAD_REQUEST)
             
         else:
             return Response(status=status.HTTP_401_UNAUTHORIZED)
@@ -981,7 +1008,6 @@ class UserProfileViewSet(viewsets.ModelViewSet):
                 }
                 UserProfileModel.objects.create(**data)
                 profile_instance = UserProfileModel.objects.get(uuid=user.uuid)
-
         response_data  = {
             'icon': str(profile_instance.icon), 
             'status':str(profile_instance.status_message), 

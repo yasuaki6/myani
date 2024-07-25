@@ -143,14 +143,14 @@ class SendResetPasswordEmailSerializer(serializers.Serializer):
         return value
   
     
-class ProvisionalRegistrationSerializer(serializers.Serializer):
+class ConfirmRegistrationSerializer(serializers.Serializer):
     token = serializers.CharField(max_length=255, required=True)
     
     def validate_token(self,value):
         try:
-            self.token_instances = VerificationTokenModel.objects.get(value)
+            self.token_instances = VerificationTokenModel.objects.get(token=value)
             if self.token_instances.purpose_regist_user:
-                if self.token_instances.expiry > timezone.now():
+                if self.token_instances.expiry < timezone.now():
                     return value
                 
                 else:
@@ -159,7 +159,7 @@ class ProvisionalRegistrationSerializer(serializers.Serializer):
             else:
                 raise ValidationError('値が不正です。')
                 
-        except:
+        except Exception as e:
             raise ValidationError('トークンが正しくありません。')
      
         
@@ -230,17 +230,121 @@ class ReviewSerializer(serializers.ModelSerializer):
     class Meta:
         model = ReviewsModel
         fields = ['anime_title','review_title','author','body','star']
-        
+    
     def validate_star(self,value):
         if value >= 1 and value <= 5:
             return value
         else:
             raise ValidationError('starは1から5までの整数でしていしたください')
     
+    
+#file関係のvalidateのユーティリティクラス   
+from django.core.validators import FileExtensionValidator
+import magic
+import os
+
+#check ext
+def ext_validator(uploaded_file):
+    extensionvalidator_instance = FileExtensionValidator(allowed_extensions=['jpg', 'jpeg', 'png', 'gif'])
+    extensionvalidator_instance(uploaded_file)
+    
+    accept = ['image/jpeg', 'image/png', 'image/gif']
+    uploaded_file_mine_type = magic.from_buffer(uploaded_file.read(1024), mime=True)
+    if uploaded_file_mine_type not in accept:
+        raise ValidationError("unsupported file type")
+    
+    return uploaded_file
+    
+#check filesize
+def filesize_validator(uploaded_file, max_filesize=None):
+    if max_filesize is None:
+        max_filesize = 10 * 1024 * 1024
+        
+    uploaded_file.file.seek(0, os.SEEK_END)
+    file_size = uploaded_file.file.tell()
+    uploaded_file.file.seek(0)
+    
+    if file_size > max_filesize:
+        raise ValidationError(f"file size exceeds the limit of {max_filesize} bytes")
+    
+    return uploaded_file
+
+from PIL import Image
+import piexif
+import io
+from django.core.files.uploadedfile import SimpleUploadedFile
+
+def create_temp_image(file,uuid):
+    #remove metadata
+    try:
+        img = Image.open(file)
+        data = list(img.getdata())
+        if img.format == 'JPEG':
+            img_no_exif = Image.new(img.mode, img.size)
+            img_no_exif.putdata(data)
+            output = io.BytesIO()
+            img_no_exif.save(output, format='JPEG', quality=95)
+            temp_image = SimpleUploadedFile(f"{uuid}.{img.format}", output.getvalue(), content_type="image/png")
+            return temp_image
+        
+        elif img.format == 'PNG' or img.format == 'GIF':
+            img_no_metadata = Image.new(img.mode, img.size)
+            img_no_metadata.putdata(data)
+            output = io.BytesIO()
+            img_no_metadata.save(output, format=img.format)
+            temp_image = SimpleUploadedFile(f"{uuid}.{img.format}", output.getvalue(), content_type=f"image/{img.format}")
+            return temp_image
+        
+        else:
+            raise ValueError("Unsupported image format")
+        
+    except Exception as e:
+        raise e
+        
         
 class UserProfileSerializer(serializers.ModelSerializer):
     UserProfileModel = apps.get_models('UserProfileModel')
+    icon = serializers.ImageField(required=False)
+    background = serializers.ImageField(required=False)
     
+    def validate_icon(self,value):
+        if value is not None:
+            ext_validator(value)
+            filesize_validator(value)
+            return value
+        
+        else:
+            return value
+            
+    def validate_background(self,value):
+        if value is not None:
+            ext_validator(value)
+            filesize_validator(value)
+            return value
+        
+        else:
+            value
+            
+    def validate(self,attrs):
+        uuid = attrs.get('uuid')
+        icon = attrs.get('icon')
+        background = attrs.get('background')
+        
+        if icon is not None:
+            attrs['icon'] = create_temp_image(icon,uuid)
+        
+        if background is not None:
+            attrs['background'] = create_temp_image(background,uuid)
+            
+        return attrs
+    
+    def update(self, instance, validated_data):
+        instance.icon = validated_data.get('icon', instance.icon)
+        instance.background = validated_data.get('background', instance.background)
+        instance.status_message = validated_data.get('status_message', instance.status_message)
+        instance.save()
+        return instance
+            
     class Meta:
         model = UserProfileModel
         fields = '__all__'

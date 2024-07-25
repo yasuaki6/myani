@@ -32,7 +32,7 @@ class UserManager(BaseUserManager):
             
             try:
                 user.user_identifier = random_generate(length=3)
-                user.unique_username = user.username + '#' + user.identifier
+                user.unique_username = user.username + '#' + user.user_identifier #1
                 user.save(using=self._db)
                 return user
             
@@ -76,12 +76,6 @@ class Users(AbstractBaseUser,PermissionsMixin):
         default=True,
         db_comment="有効の有無",
         )
-    icon = models.CharField(
-        max_length=100,
-        blank=True,
-        null=True,
-        db_comment = 'プロフィール画像'
-        )
     user_identifier = models.CharField(
         max_length = user_identifier_max_length,
         db_comment = 'ユーザ識別子'
@@ -93,7 +87,6 @@ class Users(AbstractBaseUser,PermissionsMixin):
     is_email_verified = models.BooleanField(
         default = False
     )
-    
     unique_username = models.CharField(
         max_length=username_max_length+3,
         unique=True,
@@ -112,28 +105,25 @@ class Users(AbstractBaseUser,PermissionsMixin):
         unique_together = ('username', 'user_identifier')
         
 class UserProfileModel(models.Model):
-    status_max_length = 128
-    
+    status_max_length = 128 
     uuid = models.ForeignKey(Users,
         to_field='uuid', 
         on_delete=models.CASCADE,
         null=True
         )
-    icon = models.CharField(
-        max_length=100,
-        blank=True,
+    icon = models.ImageField(
         null=True,
-        db_comment = 'プロフィール画像'
+        upload_to='user_profile/icon/',
+        db_comment = 'プロフィール画像',
         )
     status_message = models.CharField(
+        null=True,
         max_length=status_max_length,
         db_comment='ステータスメッセージ',
-        null=True,
         )
-    background = models.CharField(
-        max_length=100,
-        blank=True,
+    background = models.ImageField(
         null=True,
+        upload_to='user_profile/background/',
         db_comment = '背景'
         )
 
@@ -245,7 +235,7 @@ class FavoritesModel(models.Model):
 class UserSelectAnimeTrackingModel(models.Model):
     uuid = models.ForeignKey(
         Users,
-        on_delete=models.PROTECT
+        on_delete=models.CASCADE
         )
     select_anime = models.ForeignKey(
         AnimeTitles, 

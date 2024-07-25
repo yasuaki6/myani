@@ -5,7 +5,7 @@ class AnimeTitles(models.Model):
     title = models.CharField(primary_key=True,max_length=64)
     overview = models.TextField()
     broadcast = models.DateField()
-    img = models.ImageField(upload_to='media')
+    img = models.ImageField(upload_to='media/')
     officialsite = models.URLField(null=True)
     pv = models.TextField(null=True)
     

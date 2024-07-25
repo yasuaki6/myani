@@ -21,7 +21,6 @@ class RandomAnimeTitles(APIView):
         print(title_ids)
         
         queryset = AnimeTitles.objects.filter(pk__in=title_ids)
-        
         data = [{'title': obj.title, 'overview': obj.overview, 'img':obj.img.url, 'broadcast':obj.broadcast} for obj in queryset]
         return Response(data)
 
