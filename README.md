@@ -26,7 +26,7 @@
   </ul>
   <li>gunicorn</li>
   <li>nginx</li>
-  <li>mysql</li>
+  <li>mysql 8.4</li>
   <li>AWS</li>
   <ul>
     <li>EC2</li>
@@ -36,6 +36,8 @@
     <li>ACM</li>
     <li>ROUTE53</li>
     <li>S3</li>
+    <li>SG</li>
+    <li>IAM</li>
   </ul>
 </ul>
 <h1>機能一覧</h1>
